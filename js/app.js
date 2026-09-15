@@ -25,19 +25,29 @@ const CONFIG = {
   site: 'https://ithos-cathelier.pt',
 };
 
+/* Um preço escreve-se à portuguesa. `${1.8} €` dava «1.8 €» — e ela ia jurar
+   que tinha escrito mal o preço. */
+const euros = (n) => (n > 0
+  ? new Intl.NumberFormat('pt-PT', { style: 'currency', currency: 'EUR' }).format(n)
+  : '');
+
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-/** Miniatura de uma fotografia de produto.
+/** Miniatura de uma fotografia.
  *  Primeiro a derivada publicada (12 KB, em cache); se ainda não existir — foto
- *  acabada de carregar, ou publicação a meio — o original do repositório. */
-function miniatura(slug, nome) {
+ *  acabada de carregar, ou publicação a meio — o original do repositório.
+ *
+ *  `dir` é a pasta da peça e é a MESMA dos dois lados: `ithos/raposa` ou
+ *  `cathelier/pecas/regua-de-crescimento`. Era o slug sozinho, com «ithos/»
+ *  escrito à mão em sete sítios — e nenhum deles servia a cathelier. */
+function miniatura(dir, nome) {
   const base = nome.replace(/\.[^.]+$/, '');
   return {
-    src: `${CONFIG.site}/media/ithos/${slug}/${base}-400.webp`,
-    alternativa: `https://raw.githubusercontent.com/${CONFIG.dono}/${CONFIG.repo}/${CONFIG.ramo}/_fonte/originais/ithos/${slug}/${nome}`,
+    src: `${CONFIG.site}/media/${dir}/${base}-400.webp`,
+    alternativa: `https://raw.githubusercontent.com/${CONFIG.dono}/${CONFIG.repo}/${CONFIG.ramo}/_fonte/originais/${dir}/${nome}`,
   };
 }
 
@@ -160,18 +170,30 @@ async function carregarTudo() {
       produtos[f.name.slice(0, -5)] = dados;
     }));
 
+  // As peças da cathelier vivem num ficheiro por peça, como os candeeiros.
+  const pecas = {};
+  for (const f of await gh.listar('conteudo/cathelier/pecas')) {
+    if (!f.name.endsWith('.json')) continue;
+    const { dados } = await gh.lerJson(f.path);
+    pecas[f.name.slice(0, -5)] = dados;
+  }
+
   const paginas = {};
   for (const p of await gh.listar('conteudo/paginas')) {
     if (p.name.endsWith('.md')) paginas[p.name.slice(0, -3)] = (await gh.lerTexto(p.path)).texto;
   }
 
-  // Que fotografias existem por produto — para as poder ordenar e apagar.
+  // Que fotografias existem por peça — para as poder ordenar e apagar.
+  // A chave é a PASTA (`ithos/raposa`, `cathelier/pecas/…`), a mesma que o
+  // gerador usa: assim as duas marcas partilham o mesmo código de fotografias.
   const fotos = {};
-  for (const slug of Object.keys(produtos)) {
-    fotos[slug] = (await gh.listar(`_fonte/originais/ithos/${slug}`))
+  const listarFotos = async (dir) => {
+    fotos[dir] = (await gh.listar(`_fonte/originais/${dir}`))
       .filter((f) => /\.(jpe?g|png|webp)$/i.test(f.name))
       .map((f) => f.name);
-  }
+  };
+  for (const slug of Object.keys(produtos)) await listarFotos(`ithos/${slug}`);
+  for (const slug of Object.keys(pecas)) await listarFotos(`cathelier/pecas/${slug}`);
 
   estado.dados = {
     identidade: identidade.dados,
@@ -182,6 +204,7 @@ async function carregarTudo() {
     categorias: categorias.dados,
     perguntas: perguntas.dados,
     produtos,
+    pecas,
     paginas,
     fotos,
   };
@@ -240,6 +263,7 @@ function avisar(texto, tipo = 'bom') {
 
 const ECRAS = [
   ['produtos', 'Candeeiros', 'As peças da ithos: preços, fotografias, stock'],
+  ['pecas', 'Peças', 'As peças da cathelier: preços, textos, fotografias'],
   ['ocasioes', 'Ocasiões', 'As categorias da cathelier'],
   ['textos', 'Textos', 'As páginas escritas e as perguntas frequentes'],
   ['loja', 'Loja', 'Prazos, portes, campanhas e avisos'],
@@ -274,6 +298,7 @@ function pintar() {
   const alvo = $('#principal');
   ({
     produtos: () => (ecra[1] ? ecraProduto(alvo, ecra[1]) : ecraProdutos(alvo)),
+    pecas: () => (ecra[1] ? ecraPeca(alvo, ecra[1]) : ecraPecas(alvo)),
     ocasioes: () => ecraOcasioes(alvo),
     textos: () => ecraTextos(alvo),
     loja: () => ecraLoja(alvo),
@@ -306,17 +331,17 @@ function ecraProdutos(alvo) {
 
   <div class="grelha-cartoes">
     ${ps.map(([slug, p]) => {
-      const foto = (estado.dados.fotos[slug] ?? [])[0];
+      const foto = (estado.dados.fotos[`ithos/${slug}`] ?? [])[0];
       return `<a class="cartao" href="#/produtos/${esc(slug)}">
         <div class="cartao__foto">
-          ${foto ? (() => { const m = miniatura(slug, foto); return `<img src="${esc(m.src)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${esc(m.alternativa)}'">`; })()
+          ${foto ? (() => { const m = miniatura(`ithos/${slug}`, foto); return `<img src="${esc(m.src)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${esc(m.alternativa)}'">`; })()
             : '<span class="cartao__sem-foto">sem fotografia</span>'}
           ${!p.publicado ? '<span class="selo selo--oculto">Não aparece no site</span>' : ''}
           ${p.estado === 'esgotado' ? '<span class="selo selo--esgotado">Esgotado</span>' : ''}
         </div>
         <div class="cartao__corpo">
           <strong>${esc(p.nome)}</strong>
-          <span class="discreto">${p.preco > 0 ? `${p.preco} €` : 'sem preço'}</span>
+          <span class="discreto">${p.preco > 0 ? euros(p.preco) : 'sem preço'}</span>
         </div>
       </a>`;
     }).join('')}
@@ -340,7 +365,7 @@ function ecraProdutos(alvo) {
       conformidade: { ce: false, declaracao: '' },
       seo: { titulo: '', descricao: '' },
     };
-    estado.dados.fotos[slug] = [];
+    estado.dados.fotos[`ithos/${slug}`] = [];
     gravarJson(`conteudo/ithos/${slug}.json`, estado.dados.produtos[slug]);
     location.hash = `#/produtos/${slug}`;
   });
@@ -357,7 +382,7 @@ function ecraProduto(alvo, slug) {
   <p><a class="voltar" href="#/produtos">← Todos os candeeiros</a></p>
   <div class="pagina__cabeca">
     <h1>${esc(p.nome)}</h1>
-    <a class="botao botao--texto" href="${CONFIG.site}/ithos/candeeiros/${esc(slug)}/" target="_blank" rel="noopener">Ver no site ↗</a>
+    <a class="botao botao--texto" href="${CONFIG.site}/candeeiros/${esc(slug)}/" target="_blank" rel="noopener">Ver no site ↗</a>
   </div>
 
   <section class="bloco">
@@ -444,32 +469,32 @@ function ecraProduto(alvo, slug) {
     if (h1) h1.textContent = p.nome;
   });
 
-  pintarFotos(alvo, slug, p, guardar);
+  pintarFotos(alvo, `ithos/${slug}`, p, guardar);
   pintarOpcoes(alvo, p, guardar);
 
   $('[data-apagar]').addEventListener('click', () => {
     if (!confirm(`Apagar «${p.nome}» e as suas fotografias? Não há volta atrás.`)) return;
     marcarSujo(caminho, { apagar: true });
-    for (const f of estado.dados.fotos[slug] ?? []) {
+    for (const f of estado.dados.fotos[`ithos/${slug}`] ?? []) {
       marcarSujo(`_fonte/originais/ithos/${slug}/${f}`, { apagar: true });
     }
     delete estado.dados.produtos[slug];
-    delete estado.dados.fotos[slug];
+    delete estado.dados.fotos[`ithos/${slug}`];
     location.hash = '#/produtos';
     avisar('Peça marcada para apagar. Carregue em «Gravar alterações» para confirmar.', 'mau');
   });
 }
 
-function pintarFotos(alvo, slug, p, guardar) {
+function pintarFotos(alvo, dir, p, guardar) {
   const caixa = $('[data-fotos]', alvo);
-  const nomes = estado.dados.fotos[slug] ?? [];
+  const nomes = estado.dados.fotos[dir] ?? (estado.dados.fotos[dir] = []);
 
   const desenhar = () => {
     caixa.innerHTML = nomes.length ? nomes.map((n, i) => `
       <figure class="foto" draggable="true" data-indice="${i}">
         ${novas.has(n)
           ? `<img src="${novas.get(n)}" alt="">`
-          : (() => { const m = miniatura(slug, n); return `<img src="${esc(m.src)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${esc(m.alternativa)}'">`; })()}
+          : (() => { const m = miniatura(dir, n); return `<img src="${esc(m.src)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${esc(m.alternativa)}'">`; })()}
         ${i === 0 ? '<figcaption class="foto__capa">Capa</figcaption>' : ''}
         <button class="foto__tirar" type="button" data-tirar="${i}" aria-label="Apagar fotografia ${i + 1}">×</button>
       </figure>`).join('')
@@ -484,7 +509,7 @@ function pintarFotos(alvo, slug, p, guardar) {
     const i = Number(b.dataset.tirar);
     if (!confirm('Apagar esta fotografia?')) return;
     const nome = nomes[i];
-    marcarSujo(`_fonte/originais/ithos/${slug}/${nome}`, { apagar: true });
+    marcarSujo(`_fonte/originais/${dir}/${nome}`, { apagar: true });
     nomes.splice(i, 1);
     renumerar();
   });
@@ -513,17 +538,17 @@ function pintarFotos(alvo, slug, p, guardar) {
     for (const n of nomes) {
       if (novas.has(n)) { conteudos.push(novas.get(`base64:${n}`)); continue; }
       const r = await estado.gh.pedir(
-        `${estado.gh.base}/contents/${encodeURI(`_fonte/originais/ithos/${slug}/${n}`)}?ref=${CONFIG.ramo}`);
+        `${estado.gh.base}/contents/${encodeURI(`_fonte/originais/${dir}/${n}`)}?ref=${CONFIG.ramo}`);
       conteudos.push(r.content.replace(/\n/g, ''));
     }
-    for (const n of estado.dados.fotos[slug]) {
-      marcarSujo(`_fonte/originais/ithos/${slug}/${n}`, { apagar: true });
+    for (const n of estado.dados.fotos[dir]) {
+      marcarSujo(`_fonte/originais/${dir}/${n}`, { apagar: true });
     }
     const novosNomes = conteudos.map((_, i) => `${String(i + 1).padStart(2, '0')}.jpg`);
     conteudos.forEach((b64, i) => {
-      marcarSujo(`_fonte/originais/ithos/${slug}/${novosNomes[i]}`, { base64: b64 });
+      marcarSujo(`_fonte/originais/${dir}/${novosNomes[i]}`, { base64: b64 });
     });
-    estado.dados.fotos[slug] = novosNomes;
+    estado.dados.fotos[dir] = novosNomes;
     nomes.length = 0;
     nomes.push(...novosNomes);
     p.fotos = novosNomes.map((n) => n.replace(/\.[^.]+$/, ''));
@@ -550,7 +575,7 @@ function pintarFotos(alvo, slug, p, guardar) {
         const r = await reduzir(f);
         const b64 = await paraBase64(r.blob);
         const proximo = `${String(nomes.length + 1).padStart(2, '0')}.jpg`;
-        marcarSujo(`_fonte/originais/ithos/${slug}/${proximo}`, { base64: b64 });
+        marcarSujo(`_fonte/originais/${dir}/${proximo}`, { base64: b64 });
         novas.set(proximo, URL.createObjectURL(r.blob));
         novas.set(`base64:${proximo}`, b64);
         nomes.push(proximo);
@@ -650,14 +675,231 @@ function ecraOcasioes(alvo) {
   });
 }
 
+/* -------------------------------------------------- peças da cathelier ---- */
+
+/* As formas são os desenhos de linha que o site mostra ENQUANTO não houver
+ * fotografia da peça. Assim que a primeira fotografia entrar, o desenho
+ * desaparece sozinho — não é preciso mexer aqui. */
+const FORMAS = [
+  ['placa', 'Placa retangular'], ['disco', 'Disco'], ['circulo', 'Círculo duplo'],
+  ['coracao', 'Coração'], ['etiqueta', 'Etiqueta / marcador'], ['caixa', 'Caixa'],
+  ['moldura', 'Moldura'], ['arvore', 'Árvore'], ['letras', 'Letras / inicial'],
+  ['regua', 'Régua de crescimento'], ['nuvem', 'Nuvem'], ['estrela', 'Estrela'],
+  ['cruz', 'Cruz'], ['vela', 'Vela'], ['corte', 'Topo de bolo'],
+  ['trofeu', 'Troféu'], ['escudo', 'Escudo'], ['coelho', 'Coelho'],
+  ['painel', 'Painel / cenário'],
+];
+
+function ecraPecas(alvo) {
+  const cats = estado.dados.categorias;
+  const nomeCat = (slug) => cats.find((c) => c.slug === slug)?.nome ?? slug;
+  const ps = Object.entries(estado.dados.pecas)
+    .sort((a, b) => (a[1].ordem ?? 999) - (b[1].ordem ?? 999));
+  const semPreco = ps.filter(([, p]) => !(p.preco > 0));
+  const orfas = ps.filter(([, p]) => !cats.some((c) => c.slug === p.categoria));
+
+  // Agrupadas pela ocasião: é assim que ela pensa nelas («o que tenho para
+  // casamentos?»), e é assim que o site as arruma.
+  const porCat = new Map();
+  for (const [slug, p] of ps) {
+    if (!porCat.has(p.categoria)) porCat.set(p.categoria, []);
+    porCat.get(p.categoria).push([slug, p]);
+  }
+
+  alvo.innerHTML = `
+<div class="pagina">
+  <div class="pagina__cabeca">
+    <div>
+      <h1>Peças da cathelier</h1>
+      <p class="discreto">${ps.length} peças · ${ps.filter(([, p]) => p.publicado).length} no site</p>
+    </div>
+    <button class="botao" type="button" data-nova>Nova peça</button>
+  </div>
+
+  ${semPreco.length ? `<div class="caixa caixa--aviso">
+    <strong>${semPreco.length} ${semPreco.length === 1 ? 'peça está' : 'peças estão'} sem preço</strong> e por isso não ${semPreco.length === 1 ? 'aparece' : 'aparecem'} no site:
+    ${semPreco.map(([s, p]) => `<a href="#/pecas/${esc(s)}">${esc(p.nome)}</a>`).join(', ')}.
+  </div>` : ''}
+
+  ${orfas.length ? `<div class="caixa caixa--aviso">
+    <strong>${orfas.length} ${orfas.length === 1 ? 'peça aponta' : 'peças apontam'} para uma ocasião que já não existe</strong> —
+    o site não consegue publicar assim:
+    ${orfas.map(([s, p]) => `<a href="#/pecas/${esc(s)}">${esc(p.nome)}</a>`).join(', ')}.
+  </div>` : ''}
+
+  ${[...porCat.entries()].map(([cat, lista]) => `
+  <section class="bloco">
+    <h2>${esc(nomeCat(cat))} <span class="discreto">· ${lista.length}</span></h2>
+    <div class="grelha-cartoes">
+      ${lista.map(([slug, p]) => {
+        const dir = `cathelier/pecas/${slug}`;
+        const foto = (estado.dados.fotos[dir] ?? [])[0];
+        return `<a class="cartao" href="#/pecas/${esc(slug)}">
+          <div class="cartao__foto">
+            ${foto ? (() => { const m = miniatura(dir, foto); return `<img src="${esc(m.src)}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${esc(m.alternativa)}'">`; })()
+              : '<span class="cartao__sem-foto">desenho de linha</span>'}
+            ${!p.publicado ? '<span class="selo selo--oculto">Não aparece no site</span>' : ''}
+          </div>
+          <div class="cartao__corpo">
+            <strong>${esc(p.nome)}</strong>
+            <span class="discreto">${p.preco > 0 ? `desde ${euros(p.preco)}` : 'sem preço'}</span>
+          </div>
+        </a>`;
+      }).join('')}
+    </div>
+  </section>`).join('')}
+</div>`;
+
+  $('[data-nova]').addEventListener('click', () => {
+    const nome = prompt('Como se chama a peça nova?');
+    if (!nome?.trim()) return;
+    const slug = nome.trim().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    if (!slug) return avisar('Esse nome não dá um endereço válido.', 'mau');
+    if (estado.dados.pecas[slug]) return avisar('Já existe uma peça com esse nome.', 'mau');
+    // As opções saem de uma peça que já existe: material e gravação são as
+    // mesmas em quase todas, e escrevê-las de novo a cada peça era garantido
+    // que mais cedo ou mais tarde ficavam diferentes umas das outras.
+    const modelo = Object.values(estado.dados.pecas)[0];
+    estado.dados.pecas[slug] = {
+      nome: nome.trim(), categoria: cats[0]?.slug ?? '', preco: null,
+      publicado: false, destaque: false,
+      ordem: Math.max(0, ...Object.values(estado.dados.pecas).map((p) => p.ordem ?? 0)) + 10,
+      estado: 'por_encomenda', resumo: '', texto: '', forma: 'placa',
+      opcoes: JSON.parse(JSON.stringify(modelo?.opcoes ?? [])),
+      fotos: [], durabilidade: '', reparabilidade: '',
+      gpsr: { tipo: `CAT-${slug.slice(0, 3).toUpperCase()}`, lote: '', avisos: [] },
+      conformidade: { ce: false, declaracao: '' },
+      seo: { titulo: '', descricao: '' },
+    };
+    estado.dados.fotos[`cathelier/pecas/${slug}`] = [];
+    gravarJson(`conteudo/cathelier/pecas/${slug}.json`, estado.dados.pecas[slug]);
+    location.hash = `#/pecas/${slug}`;
+  });
+}
+
+function ecraPeca(alvo, slug) {
+  const p = estado.dados.pecas[slug];
+  if (!p) { alvo.innerHTML = '<div class="pagina"><p>Não encontrei essa peça.</p></div>'; return; }
+  const dir = `cathelier/pecas/${slug}`;
+  const caminho = `conteudo/cathelier/pecas/${slug}.json`;
+  const guardar = () => gravarJson(caminho, p);
+  const cats = estado.dados.categorias;
+  const temFoto = (estado.dados.fotos[dir] ?? []).length > 0;
+
+  alvo.innerHTML = `
+<div class="pagina pagina--estreita">
+  <p><a class="voltar" href="#/pecas">← Todas as peças</a></p>
+  <div class="pagina__cabeca">
+    <h1>${esc(p.nome)}</h1>
+    <a class="botao botao--texto" href="${CONFIG.site}/cathelier/${esc(p.categoria)}/${esc(slug)}/" target="_blank" rel="noopener">Ver no site ↗</a>
+  </div>
+
+  <section class="bloco">
+    <h2>O essencial</h2>
+    ${campoTexto('nome', 'Nome', p.nome, 'É o que aparece no site e nos resultados da Google.')}
+    ${campoEscolha('categoria', 'Ocasião', p.categoria,
+      cats.map((c) => [c.slug, c.nome]), 'É a página onde esta peça vai aparecer.')}
+    ${campoNumero('preco', 'Preço em euros', p.preco, 'É o preço de partida — no site lê-se «desde». Sem preço, a peça não aparece.')}
+    ${campoTexto('resumo', 'Uma linha sobre a peça', p.resumo, 'Aparece por baixo do nome na montra. Curta.')}
+    ${campoLongo('texto', 'Descrição', p.texto, 'Dois ou três parágrafos. Deixe uma linha em branco entre eles.')}
+  </section>
+
+  <section class="bloco">
+    <h2>No site</h2>
+    ${campoInterruptor('publicado', 'Aparece no site', p.publicado, 'Desligue para esconder sem apagar.')}
+    ${campoInterruptor('destaque', 'Mostrar primeiro na página da ocasião', p.destaque)}
+    ${campoEscolha('estado', 'Disponibilidade', p.estado ?? 'por_encomenda', [
+      ['em_stock', 'Em stock — sai em 3 dias úteis'],
+      ['por_encomenda', 'Por encomenda — até 20 dias úteis'],
+      ['esgotado', 'Esgotado — não se pode comprar'],
+    ])}
+    ${campoNumero('ordem', 'Ordem na montra', p.ordem, 'Número mais baixo aparece primeiro.')}
+  </section>
+
+  <section class="bloco">
+    <h2>Fotografias</h2>
+    <p class="ajuda">${temFoto
+      ? 'A primeira é a capa — é a que aparece na montra e quando alguém partilha a peça.'
+      : 'Esta peça ainda não tem fotografias, por isso o site mostra um <strong>desenho da linha de corte</strong>. Assim que puser aqui a primeira fotografia, o desenho desaparece sozinho.'}
+      Arraste para trocar a ordem. As fotografias são reduzidas automaticamente antes de subirem.</p>
+    <div class="fotos" data-fotos></div>
+    <label class="botao botao--vazio" style="margin-top:1rem">
+      Juntar fotografias
+      <input type="file" accept="image/*" multiple hidden data-carregar-fotos>
+    </label>
+    <p class="ajuda" data-estado-fotos></p>
+    ${campoEscolha('forma', 'Desenho a mostrar enquanto não há fotografia', p.forma ?? 'placa', FORMAS)}
+  </section>
+
+  <section class="bloco">
+    <h2>Opções de compra</h2>
+    <p class="ajuda">O que o cliente escolhe antes de juntar ao carrinho. Um campo de texto livre
+      (como a gravação) torna a peça <strong>personalizada</strong>: deixa de ter direito a devolução
+      em 14 dias, e o site avisa disso sozinho.</p>
+    <div data-opcoes></div>
+  </section>
+
+  <section class="bloco">
+    <h2>Segurança e conformidade</h2>
+    <p class="ajuda">Obrigatório por lei em cada peça vendida online (Regulamento (UE) 2023/988).
+      O tipo e o lote aparecem na ficha, para se poder identificar a peça.</p>
+    ${campoTexto('gpsr.tipo', 'Referência do modelo', p.gpsr?.tipo, 'Ex.: CAT-REG')}
+    ${campoTexto('gpsr.lote', 'Lote de produção', p.gpsr?.lote, 'Ex.: 2026-04')}
+    ${campoInterruptor('conformidade.ce', 'Tem declaração de conformidade CE', p.conformidade?.ce,
+      'Ligue só quando a declaração existir mesmo. O site não a inventa.')}
+    ${campoTexto('conformidade.declaracao', 'Referência da declaração', p.conformidade?.declaracao)}
+    ${campoLongo('gpsr.avisos', 'Avisos próprios desta peça (um por linha)',
+      (p.gpsr?.avisos ?? []).join('\n'),
+      'Se deixar vazio, usam-se os avisos gerais definidos em «Loja».')}
+  </section>
+
+  <section class="bloco">
+    <h2>Google</h2>
+    ${campoTexto('seo.titulo', 'Título nos resultados', p.seo?.titulo, 'Vazio = o site escreve um sozinho.')}
+    ${campoLongo('seo.descricao', 'Descrição nos resultados', p.seo?.descricao, 'Duas linhas, no máximo.')}
+  </section>
+
+  <section class="bloco bloco--perigo">
+    <h2>Apagar</h2>
+    <p class="ajuda">Apaga a peça e as fotografias. Não há volta atrás. Para a esconder sem apagar,
+      desligue o «Aparece no site».</p>
+    <button class="botao botao--perigo" type="button" data-apagar>Apagar ${esc(p.nome)}</button>
+  </section>
+</div>`;
+
+  ligarCampos(alvo, p, guardar, () => {
+    const h1 = $('.pagina__cabeca h1', alvo);
+    if (h1) h1.textContent = p.nome;
+    // A ocasião faz parte do ENDEREÇO da peça: trocá-la muda o «Ver no site».
+    const ver = $('.pagina__cabeca a', alvo);
+    if (ver) ver.href = `${CONFIG.site}/cathelier/${p.categoria}/${slug}/`;
+  });
+
+  pintarFotos(alvo, dir, p, guardar);
+  pintarOpcoes(alvo, p, guardar);
+
+  $('[data-apagar]').addEventListener('click', () => {
+    if (!confirm(`Apagar «${p.nome}» e as suas fotografias? Não há volta atrás.`)) return;
+    marcarSujo(caminho, { apagar: true });
+    for (const f of estado.dados.fotos[dir] ?? []) {
+      marcarSujo(`_fonte/originais/${dir}/${f}`, { apagar: true });
+    }
+    delete estado.dados.pecas[slug];
+    delete estado.dados.fotos[dir];
+    location.hash = '#/pecas';
+    avisar('Peça marcada para apagar. Carregue em «Gravar alterações» para confirmar.', 'mau');
+  });
+}
+
 /* ------------------------------------------------------------- textos ---- */
 
 const PAGINAS_EDITAVEIS = [
-  ['sobre', 'O ateliê', 'A página que conta a história das duas marcas.'],
-  ['contactos', 'Contactos', 'Como falar consigo.'],
-  ['como-e-feito', 'Como é feito um ithos', 'As etapas de fabrico.'],
-  ['cuidados-e-seguranca', 'Cuidados e segurança', 'Avisos, pilhas, limpeza. Esta página é obrigatória por lei.'],
-  ['como-trabalhamos', 'Como trabalhamos (cathelier)', 'Do pedido à entrega.'],
+  ['sobre', 'O ateliê', 'A primeira metade da página /sobre/ — a história das duas marcas.'],
+  ['como-e-feito', 'Como é feito um ithos', 'A segunda metade da mesma página, em /sobre/#como-e-feito.'],
+  ['contactos', 'Contactos', 'A página /contactos/. As perguntas frequentes aparecem por baixo deste texto.'],
+  ['cuidados-e-seguranca', 'Cuidados e segurança', 'A página /cuidados-e-seguranca/. Obrigatória por lei — o endereço não pode mudar.'],
+  ['como-trabalhamos', 'O ateliê cathelier', 'A página /cathelier/atelier/ — do pedido à entrega.'],
 ];
 
 function ecraTextos(alvo) {

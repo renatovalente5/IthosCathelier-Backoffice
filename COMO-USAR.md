@@ -54,11 +54,29 @@ conformidade CE» só deve ser ligado quando a declaração **existir mesmo**.
 
 ---
 
+## Peças (cathelier)
+
+As peças da cathelier funcionam exactamente como os candeeiros — preço,
+disponibilidade, fotografias, opções — com três coisas só delas:
+
+**Ocasião.** Cada peça pertence a uma ocasião, e é a ocasião que decide o
+endereço da peça no site. Se mudar a ocasião de uma peça que já está publicada,
+o endereço antigo deixa de existir: faça-o antes de a divulgar, não depois.
+
+**O preço é «desde».** O site escreve *desde 12 €*, porque há opções que
+acrescentam. É o preço de partida, não o preço final.
+
+**Desenho enquanto não há fotografia.** Uma peça sem fotografias aparece no
+site com um desenho da linha de corte — não com uma caixa cinzenta. Escolha o
+desenho que mais se parece com a peça. Assim que puser a primeira fotografia
+real, o desenho desaparece sozinho e não é preciso mexer aqui.
+
+---
+
 ## Ocasiões (cathelier)
 
-Cada ocasião é uma página do site, com o seu próprio pedido de orçamento.
-Escreva o texto, a lista de peças que faz para essa ocasião, e ligue ou desligue
-do site.
+Cada ocasião é uma página do site: leva o texto, a lista do que faz para essa
+ocasião, e por baixo aparecem sozinhas todas as peças que lhe pertencem.
 
 ---
 
@@ -71,8 +89,14 @@ As páginas escritas do site. Pode usar:
 - `- uma coisa` no início da linha para fazer uma lista
 - uma **linha em branco** entre parágrafos
 
-A página **Cuidados e segurança** é obrigatória por lei. Pode melhorar o texto,
-mas não a esvazie.
+A página **Cuidados e segurança** é obrigatória por lei, e o endereço dela
+(`/cuidados-e-seguranca/`) tem de se manter — é o que vai impresso junto às
+pilhas. Pode melhorar o texto, mas não a esvazie.
+
+Duas notas sobre onde cada texto aparece: **O ateliê** e **Como é feito um
+ithos** são as duas metades da mesma página (`/sobre/`), e as **perguntas
+frequentes** já não têm página própria — vivem no fim de `/contactos/`, que é
+onde quem procura uma resposta já está.
 
 ---
 
